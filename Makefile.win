@@ -1,0 +1,77 @@
+LONG_BIT := 32 #$(shell getconf LONG_BIT)
+
+Q=c:/q/w32/q.exe
+QSCRIPT=test.q
+ECHO=echo 
+EXT = dll
+SED = sed
+DLLTOOL = dlltool
+NM = nm
+
+# Borrowed from ${R}/src/gnuwin32/MkRules ${R}/src/nmath/standalone
+ifeq "$(LONG_BIT)" "64"
+SYMPAT = 's/^.* [BCDRT] / /p'
+C_DOT_O = C:/kx/c.o/w64/c.o
+else
+SYMPAT = 's/^.* [BCDRT] _/ /p'
+C_DOT_O = C:/kx/c.o/w32/c.o
+endif
+
+OPTFLAGS=-O2 -Wall -pedantic
+INCLUDES=-IC:/kx/k.h/
+CFLAGS=$(OPTGLAGS) -DKXVER=3 -Wno-strict-aliasing -std=c99 $(INCLUDES)
+FFLAGS=$(OPTFLAGS) -Wno-uninitialized -Wno-unused -ffloat-store -std=f95
+
+CC=gcc -m$(LONG_BIT)
+FORTRAN=gfortran -m$(LONG_BIT)
+MINPACK_SRCDIR=minpack
+OBJDIR := obj
+
+all: libq.exe.a shared
+vpath %.f $(MINPACK_SRCDIR)
+
+CSOURCES = $(wildcard *.c)
+FSOURCES = dpmpar enorm fdjac2 lmdif lmpar qrfac qrsolv
+
+COBJECTS := $(patsubst %.c,%.o,$(CSOURCES))
+FOBJECTS := $(addsuffix .o,$(FSOURCES))
+OBJECTS := $(addprefix $(OBJDIR)/,$(COBJECTS) $(FOBJECTS))
+LINKFLAGS = -Wl,--version-script=nls.map
+
+$(OBJECTS): $(OBJDIR)
+
+shared: $(OBJECTS)
+	@echo "Making DLL"
+	$(FORTRAN) $(LINKFLAGS) -shared $^ -o nls.$(EXT) -L. -lm -lpthread -lq.exe
+
+objects: $(OBJECTS)
+
+$(OBJDIR):
+	@echo "Creating obj directory"
+	@mkdir -p $(OBJDIR)
+
+$(OBJDIR)/%.o : %.f
+	@echo "Making " $@ " from " $<
+	@$(FORTRAN) $(FFLAGS) -c $< -o $@
+
+$(OBJDIR)/%.o : %.c
+	@echo "Compiling " $<
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	$(RM) $(OBJECTS) libq.def
+
+test: nls.$(EXT)
+	$(Q) $(QSCRIPT)
+
+# Here any c.o will do since I just need a list of symbols
+# Note that not all symbols are needed or even contained in q.exe
+libq.exe.a : libq.def
+	$(DLLTOOL) --input-def libq.def --output-lib libq.exe.a
+
+libq.def: $(C_DOT_O)
+	$(ECHO) LIBRARY q.exe > $@
+	$(ECHO) EXPORTS >> $@
+	$(NM) $^ | $(SED) -n $(SYMPAT) >> $@
+
+	
